@@ -1,11 +1,14 @@
-import asyncio
-import asyncpg
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent.parent))
+import asyncpg
+import asyncio
 
 from app.config import DATABASE_URL
+
+sys.path.append(
+    str(Path(__file__).parent.parent)
+)
 
 
 async def create_tables():
@@ -49,7 +52,7 @@ async def create_tables():
     CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON video_snapshots(created_at);
     """
 
-    print("📡 Подключаемся к базе данных...")
+    print("Подключаемся к базе данных...")
 
     try:
         conn = await asyncpg.connect(DATABASE_URL)
@@ -64,33 +67,42 @@ async def create_tables():
         print("Создаём индексы для ускорения запросов...")
         await conn.execute(create_indexes)
 
-        print("\n Таблицы успешно созданы!")
+        print("\nТаблицы успешно созданы!")
 
         # Проверим создание
-        tables = await conn.fetch("""
+        tables = await conn.fetch(
+            """
             SELECT table_name
             FROM information_schema.tables
             WHERE table_schema = 'public'
-            ORDER BY table_name
-        """)
+            ORDER BY table_name;
+            """
+        )
 
-        print("\n Созданные таблицы:")
+        print("\nСозданные таблицы:")
         for table in tables:
-            print(f"   • {table['table_name']}")
+            print(f"• {table['table_name']}")
 
         await conn.close()
 
     except asyncpg.InvalidPasswordError:
         print("Ошибка: Неверный пароль для подключения к БД")
-        print(f"Проверьте DATABASE_URL в файле .env: {DATABASE_URL[:50]}...")
+        print(
+            "Проверьте DATABASE_URL в файле .env: "
+            f"{DATABASE_URL[:50]}..."
+            )
+
     except asyncpg.ConnectionDoesNotExistError:
         print("Ошибка: Не удалось подключиться к БД")
         print("Проверьте:")
         print("   1. Запущен ли PostgreSQL: pg_ctl status")
         print("   2. Правильно ли указаны данные в DATABASE_URL")
         print("   3. Существует ли база 'video_stats'")
+
     except Exception as e:
-        print(f"Неизвестная ошибка: {type(e).__name__}: {e}")
+        print(
+            f"Неизвестная ошибка: {type(e).__name__}: {e}"
+        )
 
 
 async def main():

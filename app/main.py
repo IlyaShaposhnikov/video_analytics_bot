@@ -1,6 +1,12 @@
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import asyncio
 import logging
 
+# Импортируем dp и уже созданный объект bot из app.bot
 from app.bot import dp, bot
 from app.database import db
 
@@ -20,7 +26,7 @@ async def on_startup():
     await db.connect()
     logger.info("Подключение к БД установлено")
 
-    # Устанавливаем команды бота
+    # Устанавливаем команды бота (используем импортированный bot)
     await bot.set_my_commands([
         {"command": "start", "description": "Запустить бота"},
         {"command": "help", "description": "Помощь по использованию"}
@@ -44,7 +50,7 @@ async def main():
         # Выполняем действия при запуске
         await on_startup()
 
-        # Запускаем бота
+        # Запускаем бота (используем импортированные dp и bot)
         await dp.start_polling(bot)
 
     except Exception as e:

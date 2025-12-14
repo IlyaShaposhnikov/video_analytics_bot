@@ -23,7 +23,7 @@ Telegram-бот, который по запросу на естественно�
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/yourusername/video_analytics_bot.git
+git clone https://github.com/IlyaShaposhnikov/video_analytics_bot.git
 cd video_analytics_bot
 
 # Создайте и активируйте виртуальное окружение
@@ -89,11 +89,11 @@ nano .env  # или используйте любой текстовый ред�
 Содержимое файла .env:
 
 ```env
-# Telegram Bot Token (получите у @BotFather)
-TELEGRAM_BOT_TOKEN=ваш_токен_бота
-
 # Database configuration
 DATABASE_URL=postgresql://video_user:video_pass123@localhost:5432/video_stats
+
+# Telegram Bot Token (получите у @BotFather)
+TELEGRAM_BOT_TOKEN=ваш_токен_бота
 
 # LLM Model for Ollama
 LLM_MODEL=qwen2.5:0.5b

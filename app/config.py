@@ -10,7 +10,6 @@ DATABASE_URL = os.getenv(
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
-LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
+LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:0.5b")

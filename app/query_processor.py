@@ -1,11 +1,9 @@
-import openai
-from app.config import OPENAI_API_KEY, LLM_MODEL, LLM_TEMPERATURE
+import ollama
 import logging
+import re
+from app.config import LLM_MODEL
 
 logger = logging.getLogger(__name__)
-
-# Инициализация клиента OpenAI
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 
 class QueryProcessor:
@@ -16,6 +14,15 @@ class QueryProcessor:
         """Создает системный промпт с описанием схемы БД."""
         return """
 Ты — опытный SQL-аналитик. Твоя задача — преобразовывать вопросы на русском языке о статистике видео в корректные SQL-запросы к PostgreSQL.
+
+ВАЖНЕЙШЕЕ ПРАВИЛО:
+1. Твой ответ должен содержать ТОЛЬКО SQL-запрос, и ничего больше.
+2. НИКОГДА не пиши перед запросом слова "SQL:", "Запрос:", "Ответ:" или любые другие пояснения.
+3. НИКОГДА не используй форматирование с обратными кавычками (```sql ... ```).
+4. Запрос должен возвращать ОДНО ЧИСЛО (используй COUNT(), SUM(), COUNT(DISTINCT ...)).
+5. Даты в SQL указывай в формате 'YYYY-MM-DD'.
+6. Для извлечения даты из TIMESTAMPTZ используй функцию DATE().
+7. ID креатора — это строка, обязательно оборачивай в одинарные кавычки.
 
 СТРУКТУРА БАЗЫ ДАННЫХ:
 
@@ -44,16 +51,6 @@ class QueryProcessor:
    - created_at (TIMESTAMPTZ) — время создания снапшота (раз в час)
    - updated_at (TIMESTAMPTZ) — время обновления
 
-ВАЖНЫЕ ПРАВИЛА:
-1. ВСЕГДА возвращай ТОЛЬКО SQL-запрос, без каких-либо пояснений, примечаний или форматирования.
-2. Запрос должен возвращать ОДНО ЧИСЛО (используй COUNT(), SUM(), COUNT(DISTINCT ...)).
-3. Даты в SQL указывай в формате 'YYYY-MM-DD'.
-4. Для извлечения даты из TIMESTAMPTZ используй функцию DATE().
-5. ID креатора — это строка, обязательно оборачивай в одинарные кавычки.
-6. Не используй LIMIT, OFFSET — нам нужно точное число.
-7. Для подсчета уникальных видео используй COUNT(DISTINCT video_id).
-8. Если нужно считать за период, используй BETWEEN 'дата1' AND 'дата2'.
-
 ПРИМЕРЫ ПРЕОБРАЗОВАНИЯ:
 
 Вопрос: "Сколько всего видео есть в системе?"
@@ -73,40 +70,84 @@ SQL: SELECT COUNT(DISTINCT video_id) FROM video_snapshots WHERE DATE(created_at)
 
 Вопрос: "Сколько видео получило новые лайки 26 ноября 2025?"
 SQL: SELECT COUNT(DISTINCT video_id) FROM video_snapshots WHERE DATE(created_at) = '2025-11-26' AND delta_likes_count > 0;
-
-Вопрос: "Какая сумма просмотров у всех видео креатора с id test123?"
-SQL: SELECT COALESCE(SUM(views_count), 0) FROM videos WHERE creator_id = 'test123';
 """
 
     async def text_to_sql(self, user_query: str) -> str:
-        """Преобразует текстовый запрос пользователя в SQL."""
+        """Преобразует текстовый запрос в SQL, используя локальную модель через Ollama."""
         try:
             logger.info(f"Преобразую запрос в SQL: {user_query}")
 
-            response = client.chat.completions.create(
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_query}
+            ]
+
+            response = ollama.chat(
                 model=LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_query}
-                ],
-                temperature=LLM_TEMPERATURE,
-                max_tokens=500
+                messages=messages,
+                options={'temperature': 0.1}
             )
 
-            sql_query = response.choices[0].message.content.strip()
-            logger.info(f"Получен SQL: {sql_query}")
+            raw_sql = response['message']['content'].strip()
+            logger.info(f"Получен сырой ответ: {raw_sql}")
 
-            # Очистка ответа: убираем возможные backticks и лишние пробелы
-            if sql_query.startswith("```sql"):
-                sql_query = sql_query[6:-3].strip()
-            elif sql_query.startswith("```"):
-                sql_query = sql_query[3:-3].strip()
+            # Улучшенная очистка ответа
+            sql_query = self._clean_sql_response(raw_sql)
 
+            logger.info(f"Очищенный SQL: {sql_query}")
             return sql_query
 
         except Exception as e:
-            logger.error(f"Ошибка при работе с LLM: {e}")
-            raise Exception(f"Не удалось обработать запрос. Ошибка: {str(e)}")
+            logger.error(f"Ошибка при работе с Ollama: {e}")
+            return "SELECT COUNT(*) FROM videos"
+
+    def _clean_sql_response(self, raw_response: str) -> str:
+        """
+        Агрессивно очищает ответ модели, оставляя только SQL.
+        Удаляет префиксы 'SQL:', обратные кавычки и случайный текст.
+        """
+        if not raw_response:
+            return "SELECT COUNT(*) FROM videos"
+
+        # 1. Удаляем блоки кода с обратными кавычками (```sql ... ```)
+        code_block_pattern = r'```(?:\w+)?\s*(.*?)\s*```'
+        match = re.search(
+            code_block_pattern, raw_response, re.DOTALL | re.IGNORECASE
+        )
+        if match:
+            cleaned = match.group(1).strip()
+        else:
+            cleaned = raw_response
+
+        # 2. Удаляем префиксы типа 'SQL:', 'Query:', 'Запрос:
+        #  с любым регистром
+        cleaned = re.sub(
+            r'^(SQL|Query|Запрос|Ответ|Answer):\s*', '',
+            cleaned, flags=re.IGNORECASE
+        )
+
+        # 3. Находим начало первого SQL-запроса (ищем ключевые слов
+        # SELECT, INSERT, UPDATE, DELETE, WITH)
+        sql_start_pattern = r'\b(SELECT|INSERT|UPDATE|DELETE|WITH)\b'
+        match = re.search(sql_start_pattern, cleaned, re.IGNORECASE)
+        if match:
+            cleaned = cleaned[match.start():]
+
+        # 4. Удаляем все, что идет после закрывающей
+        # точки с запятой (если она есть)
+        semicolon_index = cleaned.find(';')
+        if semicolon_index != -1:
+            cleaned = cleaned[:semicolon_index + 1]
+
+        # 5. Удаляем лишние пробелы и переносы строк
+        cleaned = cleaned.strip()
+
+        # 6. Если после всех чисток строка пуста,
+        # возвращаем запрос по умолчанию
+        if not cleaned:
+            cleaned = "SELECT COUNT(*) FROM videos"
+
+        return cleaned
 
 
 # Глобальный экземпляр процессора

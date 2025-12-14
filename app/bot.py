@@ -4,6 +4,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.enums import ParseMode
 import logging
+import asyncio
 
 from app.query_processor import query_processor
 from app.database import db
@@ -66,26 +67,36 @@ async def handle_text_query(message: Message):
         chat_id=message.chat.id, action="typing"
     )
 
-    try:
-        # 1. Преобразуем текст в SQL
-        sql_query = await query_processor.text_to_sql(user_query)
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            # 1. Преобразуем текст в SQL
+            sql_query = await query_processor.text_to_sql(user_query)
 
-        # 2. Выполняем SQL запрос
-        result = await db.execute_query(sql_query)
+            logger.info(f"Сгенерирован SQL (попытка {attempt + 1}): {sql_query}")
 
-        # 3. Отправляем результат (только число)
-        await message.answer(result)
+            # 2. Выполняем SQL запрос
+            result = await db.execute_query(sql_query)
 
-        logger.info(f"Успешный ответ: {result}")
+            # 3. Отправляем результат (ВАЖНО: ТОЛЬКО число без пояснений!)
+            await message.answer(str(result))
+            logger.info(f"Успешный ответ: {result}")
+            return
 
-    except Exception as e:
-        logger.error(f"Ошибка обработки запроса: {e}")
-        error_message = (
-            "Произошла ошибка при обработке запроса.\n\n"
-            "Возможные причины:\n"
-            "• Некорректный формат запроса\n"
-            "• Ошибка в работе с базой данных\n"
-            "• Проблема с API анализатора\n\n"
-            "Попробуйте переформулировать вопрос или используйте /help для примеров."
-        )
-        await message.answer(error_message)
+        except Exception as e:
+            logger.error(f"Ошибка обработки (попытка {attempt + 1}): {e}")
+
+            if attempt < max_retries - 1:
+                # Ждем перед повторной попыткой
+                await asyncio.sleep(1)
+            else:
+                # Все попытки исчерпаны
+                error_message = (
+                    "К сожалению, не удалось обработать запрос.\n"
+                    "Попробуйте переформулировать вопрос или используйте /help для примеров.\n\n"
+                    "Примеры корректных запросов:\n"
+                    "• Сколько всего видео в системе?\n"
+                    "• Сколько видео у креатора с id abc123?\n"
+                    "• Сколько видео набрало больше 1000 просмотров?"
+                )
+                await message.answer(error_message)

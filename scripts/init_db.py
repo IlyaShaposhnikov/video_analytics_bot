@@ -1,14 +1,15 @@
 import sys
+import os
 from pathlib import Path
+
+# Добавляем корневую директорию проекта в путь Python
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 import asyncpg
 import asyncio
 
 from app.config import DATABASE_URL
-
-sys.path.append(
-    str(Path(__file__).parent.parent)
-)
 
 
 async def create_tables():

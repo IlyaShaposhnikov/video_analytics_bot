@@ -1,10 +1,16 @@
 """
 Скрипт для загрузки данных из JSON-файла в базу данных PostgreSQL.
 """
+import sys
 import json
 import logging
-from datetime import datetime
-from typing import Dict, List
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+from pathlib import Path
+
+# Добавляем корневую директорию проекта в путь Python
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 import asyncpg
 import asyncio
@@ -18,16 +24,30 @@ class DataLoader:
         self.db_url = db_url
         self.batch_size = 100
 
-    def _parse_datetime(self, dt_str: str) -> datetime | None:
-        """Преобразует строку в формате ISO 8601 в объект datetime."""
-        if dt_str is None:
+    def _parse_datetime(self, dt_str: str) -> Optional[datetime]:
+        """Преобразует строку в формате ISO 8601 в объект datetime в UTC."""
+        if not dt_str:
             return None
 
-        # Если строка заканчивается на 'Z', заменяем на '+00:00'
-        if dt_str.endswith('Z'):
-            dt_str = dt_str[:-1] + '+00:00'
+        try:
+            # Если строка заканчивается на 'Z', заменяем на '+00:00'
+            if dt_str.endswith('Z'):
+                dt_str = dt_str[:-1] + '+00:00'
 
-        return datetime.fromisoformat(dt_str)
+            # Преобразуем строку в datetime с учетом часового пояса
+            dt = datetime.fromisoformat(dt_str)
+
+            # Приводим к UTC
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc)
+            else:
+                # Если часового пояса нет, считаем что это UTC
+                dt = dt.replace(tzinfo=timezone.utc)
+
+            return dt
+        except Exception as e:
+            logger.error(f"Ошибка парсинга даты '{dt_str}': {e}")
+            return None
 
     async def load_json_file(self, filepath: str) -> None:
         logger.info(f"Начинаю загрузку данных из файла: {filepath}")
@@ -153,8 +173,10 @@ class DataLoader:
 
 
 async def main():
+    from app.config import DATABASE_URL
+
     # Настройки подключения
-    DB_URL = "postgresql://video_user:video_pass123@localhost:5432/video_stats"
+    DB_URL = DATABASE_URL
     JSON_FILE_PATH = "videos.json"
 
     loader = DataLoader(DB_URL)

@@ -31,6 +31,12 @@ class Database:
                 # Преобразуем результат в строку
                 if result is None:
                     return "0"
+
+                # Для числовых результатов с плавающей точкой
+                if isinstance(result, float):
+                    # Округляем до 2 знаков после запятой
+                    return str(round(result, 2))
+
                 return str(result)
 
             except Exception as e:

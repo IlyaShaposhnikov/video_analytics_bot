@@ -181,16 +181,17 @@ video_analytics_bot/
 
 - Бесплатно и без лимитов
 - Работает оффлайн
-- Быстрый отклик для небольших моделей
 - Конфиденциальность данных
 
-Выбранная модель: mistral:7b.
+Выбранная модель: mistral:7b - медлительная, но досаточно мощная модель, которая может корректно преобразовывать запросы на естественном языке в SQL-запросы.
 
 ## Оптимизация работы с базой данных
 1. Индексы для ускорения часто используемых запросов:
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_videos_creator_id ON videos(creator_id);
+CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(video_created_at);
+CREATE INDEX IF NOT EXISTS idx_snapshots_video_id ON video_snapshots(video_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON video_snapshots(created_at);
 ```
 
